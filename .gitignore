@@ -253,7 +253,7 @@ __marimo__/
 # project specific
 # Ignore the docs directory which may be user specific and should not be committed with
 # this project.
-/docs
+# /docs
 .test_chroma/
 .chroma_db/
 .test_hnsw/
