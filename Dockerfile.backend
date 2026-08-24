@@ -1,0 +1,49 @@
+# -----------------------------
+# Stage 1 — Builder
+# -----------------------------
+FROM python:3.13-slim AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /build
+
+RUN pip install --no-cache-dir uv==0.12.5
+
+# Copy metadata
+COPY pyproject.toml uv.lock ./
+
+# Sync environment
+RUN uv sync --frozen --no-dev --python /usr/local/bin/python
+
+# Copy application code
+COPY src/app app/
+COPY src/hsr_config.py .
+
+# -----------------------------
+# Stage 2 — Runtime
+# -----------------------------
+FROM python:3.13-slim AS runtime
+
+ARG HSR_REST_SERVER_PORT=8000
+
+WORKDIR /hsr
+
+# Install uv and curl for healthchecks
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/* && \
+    pip install --no-cache-dir uv==0.12.5
+
+# Copy venv + app + metadata
+COPY --from=builder /build/.venv .venv
+COPY --from=builder /build/app app/
+COPY --from=builder /build/hsr_config.py .
+COPY --from=builder /build/pyproject.toml .
+COPY --from=builder /build/uv.lock .
+
+ENV VIRTUAL_ENV=/hsr/.venv
+ENV PATH="/hsr/.venv/bin:$PATH"
+ENV PYTHONPATH=/hsr
+
+EXPOSE ${HSR_REST_SERVER_PORT}
+
+CMD ["python", "-m", "app.main"]

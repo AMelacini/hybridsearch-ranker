@@ -1,0 +1,66 @@
+[project]
+name = "hybridsearch-ranker"
+version = "0.1.0"
+description = "Hybrid search engine with ranking, document indexing, and Streamlit UI"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "beautifulsoup4>=4.15.0",
+    "chromadb>=1.5.9",
+    "fastapi[standard]>=0.140.7",
+    "langchain-huggingface>=1.2.2",
+    "langchain-text-splitters>=1.1.2",
+    "lxml>=6.1.1",
+    "pymupdf>=1.28.0",
+    "rank-bm25>=0.2.2",
+    "redis>=8.0.1",
+    "sentence-transformers>=5.6.1",
+    "streamlit>=1.60.0",
+]
+
+[dependency-groups]
+dev = [
+    "mock>=5.2.0",
+    "mypy>=2.3.0",
+    "pre-commit>=4.6.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.0",
+]
+
+[tool.mypy]
+python_version = "3.13"
+files = ["src"]
+mypy_path = ["src"]
+strict = true
+warn_unused_configs = true
+show_error_codes = true
+ignore_missing_imports = false
+
+[[tool.mypy.overrides]]
+module = [
+    "rank_bm25",
+    "chromadb",
+    "langchain_core.documents",
+    "langchain_huggingface",
+    "langchain_text_splitters",
+    "bs4",
+    "dotenv",
+    "fastapi",
+    "fastapi.*",
+    "pymupdf",
+    "uvicorn",
+]
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+# select = ["E501", "I"]
+select = ["I"]
+
+[tool.ruff.format]
+docstring-code-format = true
+docstring-code-line-length = 72

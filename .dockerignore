@@ -1,0 +1,27 @@
+# Git and editor state
+.git
+.gitignore
+.vscode
+.idea
+
+# Python caches and local envs
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+.env
+.env.*
+
+# Local runtime/generated data
+.cache/
+.chroma/
+.chroma_db/
+.data/
+data/
+node_modules/
+dist/
+build/
+*.log

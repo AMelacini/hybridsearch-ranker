@@ -1,0 +1,65 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--protected-mode", "yes", "--bind", "0.0.0.0"]
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli" , "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      args:
+        HSR_REST_SERVER_PORT: ${HSR_REST_SERVER_PORT:-8000}
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /hsr
+      HSR_REST_SERVER_PORT: ${HSR_REST_SERVER_PORT:-8000}
+      HSR_SEARCH_REQUEST_TIMEOUT: ${HSR_SEARCH_REQUEST_TIMEOUT:-180}
+      HSR_DOCS_DIR: ${HSR_DOCS_DIR:-/hsr/docs}
+      HSR_HOST_DOCS_DIR: ${HSR_HOST_DOCS_DIR:-.}
+      HSR_CHROMA_DIR: ${HSR_CHROMA_DIR:-/hsr/indexer/chroma_db}
+      HSR_CACHE_DIR: ${HSR_CACHE_DIR:-/hsr/indexer/cache}
+      HSR_REDIS_ENABLED: ${HSR_REDIS_ENABLED:-true}
+      HSR_REDIS_URL: ${HSR_REDIS_URL:-redis://redis:6379}
+    depends_on:
+      redis:
+        condition: service_healthy
+        required: false
+    ports:
+      - "${HSR_REST_SERVER_PORT:-8000}:${HSR_REST_SERVER_PORT:-8000}"
+    volumes:
+      # - .:/app
+      - ${HSR_HOST_DOCS_DIR}:/hsr/docs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${HSR_REST_SERVER_PORT:-8000}/v1/admin/probe"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+      args:
+        HSR_UI_PORT: ${HSR_UI_PORT:-8501}
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app
+      HSR_REST_SERVER_PORT: ${HSR_REST_SERVER_PORT:-8000}
+      HSR_UI_PORT: ${HSR_UI_PORT:-8501}
+      BACKEND_HOST: backend
+      BACKEND_PROTOCOL: http
+    ports:
+      - "${HSR_UI_PORT:-8501}:${HSR_UI_PORT:-8501}"
+    restart: unless-stopped
