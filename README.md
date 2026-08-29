@@ -348,6 +348,10 @@ Create an extensibility framework where users can supply their own data format t
 #### 3) Configurable backend hand-shake
 Improve/make configurable the startup hand-shake from the frontend to the backend.
 
+#### 4) Reranking
+Further refine RAG results through _reranking_ [(_follow link_)](https://cohere.com/rerank)
+
+
 ### Non-functional Enhancements
 
 #### 1) Async REST client
