@@ -3,8 +3,9 @@ from functools import wraps
 from time import sleep
 from typing import Any
 
-import requests
+import httpx
 
+from ui.asyncbridge import AsyncBridge
 from ui.logger import get_custom_logger
 
 logger = get_custom_logger(logger_name="hsr-frontend")
@@ -20,19 +21,20 @@ class BackendConnectionException(Exception):
 def retry(call: Any) -> Any:
     @wraps(call)
     def _retry(*args: Any, **kwargs: dict[str, Any]) -> Any:
+        last_error: Exception | None = None
         for i in range(NUM_RETRY):
             try:
                 return call(*args, **kwargs)
-            except requests.exceptions.ConnectionError as e:
+            except (httpx.RequestError, httpx.HTTPStatusError, httpx.HTTPError) as e:
+                last_error = e
                 msg = f"Failed to connect to HSR backend - attempt {i + 1} of {NUM_RETRY}"
                 logger.warning(msg)
                 sleep(pow(2, i))
-                msg = str(e)
             except Exception as e:
                 msg = str(e)
                 logger.error(msg)
                 raise BackendConnectionException(message=msg)
-        msg = f"Unrecoverable failure to connect to HSR backend after {NUM_RETRY} attempts: {msg}"
+        msg = f"Unrecoverable failure to connect to HSR backend after {NUM_RETRY} attempts: {last_error}"
         logger.error(msg)
         raise BackendConnectionException(message=msg)
 
@@ -48,14 +50,16 @@ def get_server_url() -> str:
 
 
 @retry
-def make_query(server_endpoint: str, payload: dict[str, float | int | str]) -> requests.Response:
-    r = requests.post(server_endpoint, json=payload)
-    return r
+def make_query(
+    server_endpoint: str,
+    payload: dict[str, float | int | str],
+    bridge: AsyncBridge,
+) -> httpx.Response:
+    return bridge.request("POST", server_endpoint, json=payload)
 
 
 @retry
-def make_handshake() -> requests.Response:
+def make_handshake(bridge: AsyncBridge) -> httpx.Response:
     server_url = get_server_url()
     server_endpoint = f"{server_url}/v1/admin/probe"
-    r = requests.get(server_endpoint)
-    return r
+    return bridge.request("GET", server_endpoint)
