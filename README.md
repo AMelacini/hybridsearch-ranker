@@ -354,7 +354,7 @@ Further refine RAG results through _reranking_ [(_follow link_)](https://cohere.
 
 ### Non-functional Enhancements
 
-#### 1) Async REST client
+~~#### 1) Async REST client~~ (***delivered***)
 The FastAPI based REST server at the heart of HSR backend is fully async.  However, the HSR frontend makes sync requests to the server when submitting a search query.
 The plan is to replace the sync approach (based on the `requests` package) with an async client (using `httpx`, `aiohttp` or `niquest`)
 
