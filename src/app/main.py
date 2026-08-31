@@ -37,7 +37,34 @@ logger = logging.getLogger("hsr-server")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    # startup steps - e.g. external DB connections etc...
+    global indexer, retriever
+
+    if indexer is None or retriever is None:
+        indexer, retriever = _build_backend_dependencies()
+
+    sub_router = create_admin_endpoints(api_version=DUMMY_API_VERSION)
+    top_router.include_router(sub_router)
+
+    sub_router = create_document_endpoints(
+        api_version=DUMMY_API_VERSION,
+        indexer=indexer,
+        retriever=retriever,
+    )
+    top_router.include_router(sub_router)
+
+    sub_router = create_search_endpoints(
+        api_version=DUMMY_API_VERSION,
+        indexer=indexer,
+        retriever=retriever,
+    )
+    top_router.include_router(sub_router)
+
+    app.include_router(top_router)
+
+    for route in app.routes:
+        if isinstance(route, APIRoute):
+            route.operation_id = route.name
+
     port = REST_SERVER_PORT
     logger.info("═" * 60)
     logger.info("✓ Hybrid Search Ranker backend is READY")
@@ -127,38 +154,6 @@ retriever: HybridRetriever | None = None
 
 DUMMY_API_VERSION = "v1"  # API versioning is not yet implemented
 top_router = APIRouter(prefix=f"/{DUMMY_API_VERSION}")
-
-# --- Register Supported components (routers)
-
-
-@app.on_event("startup")
-async def startup_backend() -> None:
-    global indexer, retriever
-    if indexer is None or retriever is None:
-        indexer, retriever = _build_backend_dependencies()
-
-    sub_router = create_admin_endpoints(api_version=DUMMY_API_VERSION)
-    top_router.include_router(sub_router)
-
-    sub_router = create_document_endpoints(
-        api_version=DUMMY_API_VERSION,
-        indexer=indexer,
-        retriever=retriever,
-    )
-    top_router.include_router(sub_router)
-
-    sub_router = create_search_endpoints(
-        api_version=DUMMY_API_VERSION,
-        indexer=indexer,
-        retriever=retriever,
-    )
-    top_router.include_router(sub_router)
-
-    app.include_router(top_router)
-
-    for route in app.routes:
-        if isinstance(route, APIRoute):
-            route.operation_id = route.name
 
 
 @app.get("/")  # for sanity check
