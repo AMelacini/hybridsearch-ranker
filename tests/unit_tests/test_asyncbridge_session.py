@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import httpx
+import pytest
 
 import ui.main as main
 import ui.utils as utils
@@ -87,6 +88,13 @@ def test_ensure_async_bridge_creates_even_when_handshake_has_not_succeeded(monke
     assert len(created) == 1
     assert bridge.started is True
     assert session_state["async_bridge"] is bridge
+
+
+def test_async_bridge_request_requires_initialized_loop() -> None:
+    bridge = main.AsyncBridge()
+
+    with pytest.raises(RuntimeError, match="AsyncBridge loop is not initialized"):
+        bridge.request("GET", "https://example.com")
 
 
 def test_make_handshake_uses_bridge_with_retry(monkeypatch) -> None:
