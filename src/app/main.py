@@ -92,17 +92,15 @@ To improve performance, 3 level of caching is implemented.
 
 # === Setup Indexing ===
 
-# --- Build indexer
-# force:
-#   false: retrieve from cache (default)
-#   true: rebuild and cache results
-indexer = DocumentIndexer(DEFAULT_DOCS_DIR, DEFAULT_CHROMA_DIR)
 
-num_chunks = indexer.build()  # force: false (default)
-logger.info("Index ready: %d chunks at startup", num_chunks)
+def _build_backend_dependencies() -> tuple[DocumentIndexer, HybridRetriever]:
+    """Create backend runtime objects lazily to avoid import-time side effects."""
+    indexer = DocumentIndexer(DEFAULT_DOCS_DIR, DEFAULT_CHROMA_DIR)
+    num_chunks = indexer.build()
+    logger.info("Index ready: %d chunks at startup", num_chunks)
+    retriever = HybridRetriever(indexer)
+    return indexer, retriever
 
-# --- Build Document Retriever
-retriever = HybridRetriever(indexer)
 
 app = FastAPI(
     title="Hybrid Search Ranker backend",
@@ -115,10 +113,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-
-@app.get("/")  # for sanity check
-async def home() -> JSONResponse:
-    return JSONResponse(content={"message": "Hello from Hybrid Search Ranker tool backend"})
+indexer: DocumentIndexer | None = None
+retriever: HybridRetriever | None = None
 
 
 # NOTE: FastAPI creates OpenAPI 3.1.0 specifications.
@@ -134,28 +130,41 @@ top_router = APIRouter(prefix=f"/{DUMMY_API_VERSION}")
 
 # --- Register Supported components (routers)
 
-sub_router = create_admin_endpoints(api_version=DUMMY_API_VERSION)  # live probe
-top_router.include_router(sub_router)
 
-sub_router = create_document_endpoints(
-    api_version=DUMMY_API_VERSION, indexer=indexer, retriever=retriever
-)  # list documents and their content
-top_router.include_router(sub_router)
+@app.on_event("startup")
+async def startup_backend() -> None:
+    global indexer, retriever
+    if indexer is None or retriever is None:
+        indexer, retriever = _build_backend_dependencies()
 
-sub_router = create_search_endpoints(
-    api_version=DUMMY_API_VERSION, indexer=indexer, retriever=retriever
-)  # query documents and manage indexing
-top_router.include_router(sub_router)
+    sub_router = create_admin_endpoints(api_version=DUMMY_API_VERSION)
+    top_router.include_router(sub_router)
 
-app.include_router(top_router)
+    sub_router = create_document_endpoints(
+        api_version=DUMMY_API_VERSION,
+        indexer=indexer,
+        retriever=retriever,
+    )
+    top_router.include_router(sub_router)
 
-# Simplify names of automatically generated methods
-for route in app.routes:
-    if isinstance(route, APIRoute):
-        # print(f"route.path: {route.path}")
-        # print(f"route.name: {route.name}")
-        # print(f"route.operation_id: {route.operation_id}")
-        route.operation_id = route.name
+    sub_router = create_search_endpoints(
+        api_version=DUMMY_API_VERSION,
+        indexer=indexer,
+        retriever=retriever,
+    )
+    top_router.include_router(sub_router)
+
+    app.include_router(top_router)
+
+    for route in app.routes:
+        if isinstance(route, APIRoute):
+            route.operation_id = route.name
+
+
+@app.get("/")  # for sanity check
+async def home() -> JSONResponse:
+    return JSONResponse(content={"message": "Hello from Hybrid Search Ranker tool backend"})
+
 
 if __name__ == "__main__":
     try:

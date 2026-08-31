@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
-from unittest.mock import Mock
 
+import dotenv
 import pytest
+from mock import Mock
+
+env_file = Path(__file__).resolve().parents[1] / ".env"
+
+if env_file.exists():
+    dotenv.load_dotenv(env_file, override=False)
+else:
+    print(f"Warning: {env_file} not found; using existing env/defaults")
 
 
 @pytest.fixture
