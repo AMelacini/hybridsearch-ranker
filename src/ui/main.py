@@ -1,17 +1,73 @@
 import json
+from typing import Any, MutableMapping
 
 import dotenv
 import streamlit as st
 
+from ui.asyncbridge import AsyncBridge
+from ui.logger import get_custom_logger
 from ui.utils import BackendConnectionException, get_server_url, make_handshake, make_query
 
 dotenv.load_dotenv()
 
+logger = get_custom_logger(logger_name="hsr-frontend")
+
 # === Helpers ===
 
 
+def get_streamlit_session_id() -> str | None:
+    """Return the current Streamlit browser session identifier when available."""
+    try:
+        session_id = getattr(st.context, "session_id", None)
+        if session_id is None:
+            return None
+        return str(session_id)
+    except Exception as e:
+        logger.warning(f"Exception caught while getting st.context.session_id: {e}")
+        return None
+
+
+def cleanup_async_bridge(session_state: MutableMapping[str, Any]) -> None:
+    """Close and remove any existing bridge associated with this session."""
+    bridge = session_state.pop("async_bridge", None)
+    session_state.pop("async_bridge_session_id", None)
+    if bridge is not None:
+        try:
+            bridge.close()
+        except Exception as e:
+            logger.warning(f"Exception caught while cleaning up AsynBridge: {e}")
+            pass
+
+
+def ensure_async_bridge(
+    session_state: MutableMapping[str, Any] | Any,
+    *,
+    session_id: str | None = None,
+) -> AsyncBridge:
+    """Create a single AsyncBridge per session at startup and after a browser refresh."""
+    current_session_id = session_id if session_id is not None else get_streamlit_session_id()
+    existing_bridge = session_state.get("async_bridge")
+    existing_session_id = session_state.get("async_bridge_session_id")
+
+    if isinstance(existing_bridge, AsyncBridge):
+        if current_session_id is None or existing_session_id == current_session_id:
+            return existing_bridge
+        cleanup_async_bridge(session_state)
+
+    bridge = AsyncBridge()
+    bridge.start()
+    session_state["async_bridge"] = bridge
+    session_state["async_bridge_session_id"] = current_session_id
+    return bridge
+
+
 def do_search(
-    query: str, top_k: int, vector_search_weight: float = 0.5, rrf_k: int = 60, hybrid_search_fold: int = 3
+    bridge: AsyncBridge,
+    query: str,
+    top_k: int,
+    vector_search_weight: float = 0.5,
+    rrf_k: int = 60,
+    hybrid_search_fold: int = 3,
 ) -> tuple[list[str], bool]:
 
     data = {
@@ -28,7 +84,7 @@ def do_search(
     success = False
     with st.spinner("Searching ..."):
         try:
-            response = make_query(server_endpoint, payload=data)
+            response = make_query(server_endpoint, payload=data, bridge=bridge)
             if response.status_code == 200:
                 resp = response.json()
                 if "summary" in resp:
@@ -40,9 +96,8 @@ def do_search(
                 error_msg = f"HTTP status_code: {response.status_code}: {response.reason}\n"
                 error_msg += json.dumps(response.json())
                 search_results.append(error_msg)
-        except BackendConnectionException as e:
-            msg = f"Unrecoverable failure to connect to HSR backend at {server_endpoint}: "
-            msg += f"{e.message}"
+        except BackendConnectionException as exc:  # pragma: no cover - defensive UI fallback
+            msg = f"Unrecoverable failure to connect to HSR backend at {server_endpoint}: {exc.message}"
             search_results.append(msg)
 
         return search_results, success
@@ -184,20 +239,28 @@ with st.expander("ℹ️ Show/Hide Reciprocal Rank Fusion (RRF) Equation", expan
     * $k$ is a constant hyperparameter (commonly set to $60$).
     """)
 
+if "async_bridge" not in st.session_state or not st.session_state["async_bridge"].is_valid():
+    ensure_async_bridge(st.session_state, session_id=get_streamlit_session_id())
+
+# Expose the live bridge instance to the rest of the streamlit module for future development.
+bridge_value = st.session_state.get("async_bridge")
+if not isinstance(bridge_value, AsyncBridge):
+    raise RuntimeError("AsyncBridge is missing from the current Streamlit session state.")
+async_bridge = bridge_value
+
 if "handshake" not in st.session_state:  # UI startup or browser refresh
     st.session_state.handshake = True
 
-    response = None
     with st.spinner("Contacting HSR backend - _please wait..._"):
         error_msg = "HSR backend unresponsive, please retry later by refreshing the browser session. "
         error_msg += f"If the problem persists, troubleshoot the backend {get_server_url()}"
         try:
-            response = make_handshake()
+            response = make_handshake(async_bridge)
             if response.status_code == 200:
                 st.success("HSR backend is alive, please enter query")
             else:
                 st.error(error_msg)
-        except BackendConnectionException as e:
+        except BackendConnectionException:
             st.error(error_msg)
 
 if "results" not in st.session_state:
@@ -207,6 +270,7 @@ query = st.chat_input("Enter query here ...")
 ok = True
 if query:
     st.session_state.results, ok = do_search(
+        async_bridge,
         query,
         st.session_state.top_k,
         vector_search_weight=st.session_state.weight,
